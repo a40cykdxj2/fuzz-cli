@@ -85,6 +85,7 @@ fz --completions fish > ~/.config/fish/completions/fz.fish
 
 ```text
 src/main.rs         argument parsing, key loop, drawing
+src/render/         pane geometry, scrolling window, match highlighting
 src/scan.rs         breadth-first directory walk
 src/score.rs        fuzzy subsequence scoring and ranking
 src/preview.rs      file sample loading and line clipping
