@@ -7,9 +7,12 @@ use std::process::ExitCode;
 
 mod completions;
 mod preview;
+mod render;
 mod scan;
 mod score;
 mod term;
+
+use render::layout;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -221,18 +224,16 @@ fn interact(options: &Options, files: &[PathBuf]) -> io::Result<Option<PathBuf>>
 
 fn draw(options: &Options, query: &str, hits: &[score::Hit], cursor: usize) -> io::Result<()> {
     let (rows, cols) = term::size();
+    let panes = layout::split(cols, !options.no_preview);
     let list_height = rows.saturating_sub(3).max(1);
-    let show_preview = !options.no_preview && cols >= 100;
-    let preview_width = if show_preview { cols / 2 } else { 0 };
-    let name_width = cols.saturating_sub(preview_width + 2).max(10);
+    let name_width = panes.list.saturating_sub(2).max(10);
 
-    let start = cursor.saturating_sub(list_height / 2);
-    let end = (start + list_height).min(hits.len());
-    let preview_lines = if show_preview && !hits.is_empty() {
+    let (start, end) = layout::window(hits.len(), cursor, list_height);
+    let preview_lines = if panes.preview > 0 && !hits.is_empty() {
         preview::load(
             &hits[cursor].path,
             options.preview_lines,
-            preview_width.saturating_sub(2),
+            panes.preview.saturating_sub(2),
         )
     } else {
         Vec::new()
@@ -252,12 +253,10 @@ fn draw(options: &Options, query: &str, hits: &[score::Hit], cursor: usize) -> i
         let visible = 2 + shown.chars().count().min(name_width - 2);
 
         let mut line = String::from(marker);
-        line.push_str(&highlight(&shown, &hit.positions, name_width - 2));
-        for _ in visible..name_width {
-            line.push(' ');
-        }
+        line.push_str(&render::highlight(&shown, &hit.positions, name_width - 2));
+        line.push_str(&render::spaces(name_width.saturating_sub(visible)));
 
-        if show_preview {
+        if panes.preview > 0 {
             let text = preview_lines.get(index - start).map_or("", |line| line.as_str());
             line.push_str("\x1b[0m| ");
             line.push_str(text);
@@ -274,28 +273,4 @@ fn draw(options: &Options, query: &str, hits: &[score::Hit], cursor: usize) -> i
     let mut out = io::stdout();
     out.write_all(frame.as_bytes())?;
     out.flush()
-}
-
-/// Render `path` with matched chars in bold green, stopping at `width`.
-fn highlight(path: &str, positions: &[usize], width: usize) -> String {
-    let mut out = String::new();
-    let mut marked = false;
-
-    for (index, ch) in path.chars().enumerate() {
-        if index >= width {
-            break;
-        }
-        let is_hit = positions.binary_search(&index).is_ok();
-        if is_hit && !marked {
-            out.push_str("\x1b[1;32m");
-        } else if !is_hit && marked {
-            out.push_str("\x1b[0m");
-        }
-        marked = is_hit;
-        out.push(ch);
-    }
-    if marked {
-        out.push_str("\x1b[0m");
-    }
-    out
 }
